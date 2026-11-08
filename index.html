@@ -216,6 +216,7 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
     logEl.appendChild(line);
     while (logEl.childNodes.length > 200) logEl.removeChild(logEl.firstChild);
     logEl.scrollTop = logEl.scrollHeight;
+    if (cls === 'err') { const box = $('#logBox'); box.open = true; box.scrollIntoView({ block: 'nearest' }); }
   };
   const setState = (s) => {
     btn.classList.toggle('on', s === 'on');
@@ -270,6 +271,10 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
     if (device && device.gatt.connected) { device.gatt.disconnect(); return; }
     try {
       setState('busy');
+      log('Opening Bluetooth device list…');
+      if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability())) {
+        throw new Error('Bluetooth is off or this browser is not allowed to use it. Turn Bluetooth on, and on iPhone check Settings > Bluefy > Bluetooth.');
+      }
       device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
       device.addEventListener('gattserverdisconnected', () => { ch = null; setState('off'); log('Disconnected', 'err'); });
       const server = await device.gatt.connect();
@@ -283,8 +288,8 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
       log('Connected to ' + (device.name || 'module'));
     } catch (err) {
       setState('off');
-      if (err && err.name === 'NotFoundError') return; // user closed the picker
-      log('Could not connect: ' + (err && err.message ? err.message : err) +
+      // NotFoundError also covers "Bluetooth adapter not available", so always show it.
+      log('Could not connect (' + (err && err.name ? err.name : 'error') + '): ' + (err && err.message ? err.message : err) +
           ' — make sure the cat is on and the module light is blinking. Pick a device named like HMSoft, BT05, CC41 or MLT-BT05.', 'err');
     }
   }
