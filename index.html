@@ -113,6 +113,8 @@ summary { padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--mut
 #log { margin: 0; padding: 0 14px 12px; font: 12px/1.5 var(--mono); max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 #log .out { color: var(--accent); }
 #log .err { color: var(--stop); }
+.status { margin: 0; font: 12px/1.4 var(--mono); color: var(--muted); padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; word-break: break-word; }
+.status.bad { color: var(--stop); border-color: var(--stop); }
 footer { font-size: 12px; color: var(--muted); text-align: center; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -126,6 +128,8 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
       <button id="connect" class="connect"><span class="dot"></span><span id="connectLabel">Bluetooth</span></button>
     </div>
   </header>
+
+  <p id="status" class="status">Page v4 · script not running</p>
 
   <div id="noBle" class="notice" hidden>
     <strong>This browser can't use Bluetooth or USB.</strong> On iPhone, open this page in the free <b>Bluefy</b> app from the App Store (Safari and Chrome on iPhone can't). On a PC, use Chrome or Edge.
@@ -195,6 +199,10 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
 </main>
 
 <script>
+window.addEventListener('error', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v4 · script error: ' + e.message; s.className = 'status bad'; } });
+window.addEventListener('unhandledrejection', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v4 · error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason); s.className = 'status bad'; } });
+</script>
+<script>
 (() => {
   const SERVICE = 0xffe0, CHAR = 0xffe1;
   const $ = (s) => document.querySelector(s);
@@ -209,7 +217,10 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
     while ((i = rx.indexOf('\n')) >= 0) { const l = rx.slice(0, i).trim(); rx = rx.slice(i + 1); if (l) log(l); }
   };
 
+  const statusEl = $('#status');
+  const status = (text, bad) => { statusEl.textContent = 'Page v4 · ' + text; statusEl.className = bad ? 'status bad' : 'status'; };
   const log = (text, cls) => {
+    if (cls !== 'out') status(text, cls === 'err');
     const line = document.createElement('div');
     if (cls) line.className = cls;
     line.textContent = text;
@@ -232,6 +243,7 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
   if (!navigator.bluetooth) btn.hidden = true;
   if (!navigator.serial) usbBtn.hidden = true;
   if (!navigator.bluetooth && !navigator.serial) $('#noBle').hidden = false;
+  status('ready · Bluetooth ' + (navigator.bluetooth ? 'supported' : 'NOT supported in this browser') + (window.isSecureContext ? '' : ' · not https'), !navigator.bluetooth);
 
   async function usbClose() {
     try { if (reader) await reader.cancel(); } catch (_) {}
@@ -271,13 +283,19 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
     if (device && device.gatt.connected) { device.gatt.disconnect(); return; }
     try {
       setState('busy');
+      // requestDevice must be the first await after the tap, or iPhone browsers may block the device list.
+      // Use filters, not acceptAllDevices: Bluefy on iPhone rejects acceptAllDevices (error 2) without showing a list.
+      const pick = navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE] }, { namePrefix: 'BT' }, { namePrefix: 'HM' }, { namePrefix: 'MLT' },
+                  { namePrefix: 'CC41' }, { namePrefix: 'JDY' }, { namePrefix: 'DSD' }, { namePrefix: 'AT-' }],
+        optionalServices: [SERVICE]
+      });
       log('Opening Bluetooth device list…');
-      if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability())) {
-        throw new Error('Bluetooth is off or this browser is not allowed to use it. Turn Bluetooth on, and on iPhone check Settings > Bluefy > Bluetooth.');
-      }
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
+      device = await pick;
+      log('Picked ' + (device.name || 'device') + ', connecting…');
       device.addEventListener('gattserverdisconnected', () => { ch = null; setState('off'); log('Disconnected', 'err'); });
       const server = await device.gatt.connect();
+      log('Connected, looking for the FFE0 service…');
       const svc = await server.getPrimaryService(SERVICE);
       ch = await svc.getCharacteristic(CHAR);
       try {
@@ -290,7 +308,7 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
       setState('off');
       // NotFoundError also covers "Bluetooth adapter not available", so always show it.
       log('Could not connect (' + (err && err.name ? err.name : 'error') + '): ' + (err && err.message ? err.message : err) +
-          ' — make sure the cat is on and the module light is blinking. Pick a device named like HMSoft, BT05, CC41 or MLT-BT05.', 'err');
+          ' — make sure the cat is on and the module light is blinking. Pick a device named like HMSoft, BT05, CC41 or MLT-BT05. On iPhone also check Settings > Bluefy > Bluetooth is on.', 'err');
     }
   }
 
