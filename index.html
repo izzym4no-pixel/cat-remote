@@ -129,7 +129,7 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
     </div>
   </header>
 
-  <p id="status" class="status">Page v4 · script not running</p>
+  <p id="status" class="status">Page v5 · script not running</p>
 
   <div id="noBle" class="notice" hidden>
     <strong>This browser can't use Bluetooth or USB.</strong> On iPhone, open this page in the free <b>Bluefy</b> app from the App Store (Safari and Chrome on iPhone can't). On a PC, use Chrome or Edge.
@@ -199,8 +199,8 @@ footer { font-size: 12px; color: var(--muted); text-align: center; }
 </main>
 
 <script>
-window.addEventListener('error', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v4 · script error: ' + e.message; s.className = 'status bad'; } });
-window.addEventListener('unhandledrejection', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v4 · error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason); s.className = 'status bad'; } });
+window.addEventListener('error', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v5 · script error: ' + e.message; s.className = 'status bad'; } });
+window.addEventListener('unhandledrejection', (e) => { const s = document.getElementById('status'); if (s) { s.textContent = 'Page v5 · error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason); s.className = 'status bad'; } });
 </script>
 <script>
 (() => {
@@ -218,7 +218,7 @@ window.addEventListener('unhandledrejection', (e) => { const s = document.getEle
   };
 
   const statusEl = $('#status');
-  const status = (text, bad) => { statusEl.textContent = 'Page v4 · ' + text; statusEl.className = bad ? 'status bad' : 'status'; };
+  const status = (text, bad) => { statusEl.textContent = 'Page v5 · ' + text; statusEl.className = bad ? 'status bad' : 'status'; };
   const log = (text, cls) => {
     if (cls !== 'out') status(text, cls === 'err');
     const line = document.createElement('div');
@@ -285,13 +285,25 @@ window.addEventListener('unhandledrejection', (e) => { const s = document.getEle
       setState('busy');
       // requestDevice must be the first await after the tap, or iPhone browsers may block the device list.
       // Use filters, not acceptAllDevices: Bluefy on iPhone rejects acceptAllDevices (error 2) without showing a list.
-      const pick = navigator.bluetooth.requestDevice({
-        filters: [{ services: [SERVICE] }, { namePrefix: 'BT' }, { namePrefix: 'HM' }, { namePrefix: 'MLT' },
-                  { namePrefix: 'CC41' }, { namePrefix: 'JDY' }, { namePrefix: 'DSD' }, { namePrefix: 'AT-' }],
-        optionalServices: [SERVICE]
-      });
-      log('Opening Bluetooth device list…');
-      device = await pick;
+      // Bluefy is picky about request options, so try the simplest ones one at a time.
+      const tries = [
+        ['FFE0 service', { filters: [{ services: [SERVICE] }] }],
+        ['name BT05', { filters: [{ name: 'BT05' }], optionalServices: [SERVICE] }],
+        ['name starts with BT', { filters: [{ namePrefix: 'BT' }], optionalServices: [SERVICE] }],
+        ['all devices', { acceptAllDevices: true, optionalServices: [SERVICE] }],
+      ];
+      device = null;
+      let lastErr = null;
+      for (const [what, opts] of tries) {
+        log('Opening device list (' + what + ')…');
+        try { device = await navigator.bluetooth.requestDevice(opts); break; }
+        catch (e) {
+          if (e && e.name === 'NotFoundError' && /cancel/i.test(e.message || '')) throw e; // user closed the list
+          lastErr = e;
+          log('  that search failed: ' + (e && e.message ? e.message : e));
+        }
+      }
+      if (!device) throw lastErr;
       log('Picked ' + (device.name || 'device') + ', connecting…');
       device.addEventListener('gattserverdisconnected', () => { ch = null; setState('off'); log('Disconnected', 'err'); });
       const server = await device.gatt.connect();
