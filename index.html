@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Nybble Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one phone-height column — status bar, gait switch, direction pad, trick grid, command line + log. */
+:root {
+  --bg: #eef1ee;
+  --panel: #ffffff;
+  --ink: #17201b;
+  --muted: #5d6a63;
+  --line: #d3dbd5;
+  --accent: #e0791c;      /* the cat's 3D-print orange */
+  --accent-ink: #ffffff;
+  --pcb: #1f6b47;         /* control-board green */
+  --pcb-soft: #dcefe4;
+  --stop: #c2362b;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101512; --panel: #19211c; --ink: #e8eee9; --muted: #96a59c; --line: #2c3831;
+    --accent: #f08a2c; --accent-ink: #1a1006; --pcb: #5cc48f; --pcb-soft: #1d3428; --stop: #ef6155;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101512; --panel: #19211c; --ink: #e8eee9; --muted: #96a59c; --line: #2c3831;
+  --accent: #f08a2c; --accent-ink: #1a1006; --pcb: #5cc48f; --pcb-soft: #1d3428; --stop: #ef6155;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 15px/1.4 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: max(14px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+main { max-width: 460px; margin: 0 auto; display: grid; gap: 18px; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font: 700 26px/1 var(--display); margin: 0; letter-spacing: -0.01em; }
+h1 small { display: block; font: 500 12px/1.3 var(--body); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-top: 4px; }
+h2 { font: 600 11px/1 var(--body); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 8px; }
+
+button { font: inherit; color: inherit; cursor: pointer; border: 0; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.connect {
+  background: var(--pcb); color: var(--bg); border-radius: 999px; padding: 10px 16px;
+  font-weight: 600; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.connect .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .6; }
+.connect.on { background: var(--pcb-soft); color: var(--pcb); }
+.connect.on .dot { background: var(--pcb); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcb) 30%, transparent); }
+.connect.busy .dot { animation: blink 0.8s infinite; }
+.connect.alt:not(.on) { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+.links { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.speed select { font: 13px var(--mono); padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+@keyframes blink { 50% { opacity: .15; } }
+
+.notice { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.notice strong { color: var(--accent); }
+
+.gaits { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.gaits button { background: transparent; border-radius: 9px; padding: 9px 0; font-weight: 600; color: var(--muted); }
+.gaits button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pad button {
+  aspect-ratio: 1 / 0.82; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
+  display: grid; place-items: center; gap: 2px; padding: 6px; font-weight: 600; font-size: 13px;
+  transition: transform .08s, background .15s;
+}
+.pad button svg { width: 30px; height: 30px; stroke: var(--ink); fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.pad button.fwd { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pad button.fwd svg { stroke: var(--accent-ink); }
+.pad button.stop { background: transparent; border: 2px solid var(--stop); color: var(--stop); }
+.pad button.stop svg { stroke: var(--stop); }
+.pad button:active, .tricks button:active { transform: scale(.95); }
+.pad button.sent, .tricks button.sent { background: var(--pcb-soft); }
+
+.tricks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tricks button {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px 8px;
+  display: grid; gap: 3px; text-align: center; transition: transform .08s, background .15s;
+}
+.tricks b { font-weight: 600; font-size: 14px; }
+.tricks code { font: 400 11px var(--mono); color: var(--muted); }
+.tricks button.warn b { color: var(--stop); }
+
+.console { display: grid; gap: 8px; }
+.cmdline { display: flex; gap: 8px; }
+.cmdline input {
+  flex: 1; min-width: 0; font: 15px var(--mono); padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+}
+.cmdline button { background: var(--ink); color: var(--bg); border-radius: 10px; padding: 0 16px; font-weight: 600; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+summary { padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--muted); }
+#log { margin: 0; padding: 0 14px 12px; font: 12px/1.5 var(--mono); max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+#log .out { color: var(--accent); }
+#log .err { color: var(--stop); }
+footer { font-size: 12px; color: var(--muted); text-align: center; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Nybble Remote<small>OpenCat · Bluetooth</small></h1>
+    <div class="links">
+      <button id="usb" class="connect alt" title="Connect with the USB cable (Chrome or Edge on a PC)"><span class="dot"></span><span id="usbLabel">USB</span></button>
+      <button id="connect" class="connect"><span class="dot"></span><span id="connectLabel">Bluetooth</span></button>
+    </div>
+  </header>
+
+  <div id="noBle" class="notice" hidden>
+    <strong>This browser can't use Bluetooth or USB.</strong> On iPhone, open this page in the free <b>Bluefy</b> app from the App Store (Safari and Chrome on iPhone can't). On a PC, use Chrome or Edge.
+  </div>
+
+  <section>
+    <h2>Gait</h2>
+    <div class="gaits" role="group" aria-label="Gait">
+      <button id="gait-wk" data-gait="wk" aria-pressed="true">Walk</button>
+      <button id="gait-tr" data-gait="tr" aria-pressed="false">Trot</button>
+      <button id="gait-cr" data-gait="cr" aria-pressed="false">Crawl</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Move</h2>
+    <div class="pad">
+      <button id="mv-left" data-move="L" aria-label="Forward left"><svg viewBox="0 0 32 32"><path d="M22 24c0-8-4-12-12-12M14 7l-5 5 5 5"/></svg>Left</button>
+      <button id="mv-fwd" class="fwd" data-move="F" aria-label="Forward"><svg viewBox="0 0 32 32"><path d="M16 26V7M9 13l7-7 7 7"/></svg>Forward</button>
+      <button id="mv-right" data-move="R" aria-label="Forward right"><svg viewBox="0 0 32 32"><path d="M10 24c0-8 4-12 12-12M18 7l5 5-5 5"/></svg>Right</button>
+      <button id="mv-backl" data-cmd="kbkL" aria-label="Back up left"><svg viewBox="0 0 32 32"><path d="M22 8c0 8-4 12-12 12M14 25l-5-5 5-5"/></svg>Back L</button>
+      <button id="mv-stop" class="stop" data-cmd="kbalance" aria-label="Stop and stand"><svg viewBox="0 0 32 32"><rect x="9" y="9" width="14" height="14" rx="2"/></svg>Stop</button>
+      <button id="mv-backr" data-cmd="kbkR" aria-label="Back up right"><svg viewBox="0 0 32 32"><path d="M10 8c0 8 4 12 12 12M18 25l5-5-5-5"/></svg>Back R</button>
+      <span></span>
+      <button id="mv-back" data-cmd="kbk" aria-label="Back up"><svg viewBox="0 0 32 32"><path d="M16 6v19M9 19l7 7 7-7"/></svg>Back</button>
+      <span></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tricks</h2>
+    <div class="tricks">
+      <button id="t-stand" data-cmd="kbalance"><b>Stand</b><code>kbalance</code></button>
+      <button id="t-sit" data-cmd="ksit"><b>Sit</b><code>ksit</code></button>
+      <button id="t-str" data-cmd="kstr"><b>Stretch</b><code>kstr</code></button>
+      <button id="t-pu1" data-cmd="kpu1"><b>Push-ups</b><code>kpu1</code></button>
+      <button id="t-pu2" data-cmd="kpu2"><b>Push-ups 2</b><code>kpu2</code></button>
+      <button id="t-bd" data-cmd="kbd"><b>Pounce</b><code>kbd</code></button>
+      <button id="t-butt" data-cmd="kbuttUp"><b>Butt up</b><code>kbuttUp</code></button>
+      <button id="t-ly" data-cmd="kly"><b>Lie down</b><code>kly</code></button>
+      <button id="t-sleep" data-cmd="ksleep"><b>Sleep</b><code>ksleep</code></button>
+      <button id="t-pee" data-cmd="kpee"><b>Pee</b><code>kpee</code></button>
+      <button id="t-vt" data-cmd="kvt"><b>March</b><code>kvt</code></button>
+      <button id="t-rest" data-cmd="krest"><b>Rest</b><code>krest</code></button>
+      <button id="t-relax" class="warn" data-cmd="d"><b>Go limp</b><code>d</code></button>
+      <button id="t-calib" data-cmd="kcalib"><b>Calib pose</b><code>kcalib</code></button>
+      <button id="t-zero" data-cmd="kzero"><b>Zero pose</b><code>kzero</code></button>
+    </div>
+  </section>
+
+  <section class="console">
+    <h2>Type a command</h2>
+    <form class="cmdline" id="cmdForm">
+      <input id="cmdInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ksit" aria-label="Command">
+      <button id="cmdSend" type="submit">Send</button>
+    </form>
+    <label class="speed" for="baud">USB speed (must match <code>Serial.begin</code> in Nybble.ino)
+      <select id="baud"><option value="115200" selected>115200</option><option value="9600">9600</option></select>
+    </label>
+    <details id="logBox">
+      <summary>Messages from the cat</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+
+  <footer>Bluetooth module: CC2541 / HM-10 (service FFE0) · for Bluetooth the cat must be set to 9600 baud</footer>
+</main>
+
+<script>
+(() => {
+  const SERVICE = 0xffe0, CHAR = 0xffe1;
+  const $ = (s) => document.querySelector(s);
+  const btn = $('#connect'), label = $('#connectLabel'), logEl = $('#log');
+  const usbBtn = $('#usb'), usbLabel = $('#usbLabel');
+  let device = null, ch = null, gait = 'wk', queue = Promise.resolve(), rx = '';
+  let port = null, writer = null, reader = null;
+
+  const onText = (str) => {
+    rx += str;
+    let i;
+    while ((i = rx.indexOf('\n')) >= 0) { const l = rx.slice(0, i).trim(); rx = rx.slice(i + 1); if (l) log(l); }
+  };
+
+  const log = (text, cls) => {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = text;
+    logEl.appendChild(line);
+    while (logEl.childNodes.length > 200) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  const setState = (s) => {
+    btn.classList.toggle('on', s === 'on');
+    btn.classList.toggle('busy', s === 'busy');
+    label.textContent = s === 'on' ? (device && device.name ? device.name : 'Connected') : s === 'busy' ? 'Connecting…' : 'Bluetooth';
+  };
+  const setUsb = (s) => {
+    usbBtn.classList.toggle('on', s === 'on');
+    usbBtn.classList.toggle('busy', s === 'busy');
+    usbLabel.textContent = s === 'on' ? 'USB on' : s === 'busy' ? 'Opening…' : 'USB';
+  };
+
+  if (!navigator.bluetooth) btn.hidden = true;
+  if (!navigator.serial) usbBtn.hidden = true;
+  if (!navigator.bluetooth && !navigator.serial) $('#noBle').hidden = false;
+
+  async function usbClose() {
+    try { if (reader) await reader.cancel(); } catch (_) {}
+    try { if (writer) writer.releaseLock(); } catch (_) {}
+    try { if (port) await port.close(); } catch (_) {}
+    port = writer = reader = null;
+    setUsb('off');
+  }
+
+  async function usbConnect() {
+    if (port) { await usbClose(); log('USB closed'); return; }
+    try {
+      setUsb('busy');
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: Number($('#baud').value) });
+      writer = port.writable.getWriter();
+      setUsb('on');
+      log('USB open at ' + $('#baud').value + ' baud. The cat restarts when USB opens; wait for it to finish starting up (a few seconds) before sending moves.');
+      (async () => {
+        const dec = new TextDecoder();
+        while (port && port.readable) {
+          reader = port.readable.getReader();
+          try {
+            for (;;) { const { value, done } = await reader.read(); if (done) break; onText(dec.decode(value, { stream: true })); }
+          } catch (_) { break; } finally { try { reader.releaseLock(); } catch (_) {} }
+        }
+        if (port) { log('USB disconnected', 'err'); await usbClose(); }
+      })();
+    } catch (err) {
+      port = null; setUsb('off');
+      if (err && err.name === 'NotFoundError') return; // picker closed
+      log('Could not open USB: ' + (err && err.message ? err.message : err) + ' (close the Arduino Serial Monitor first; only one program can use the port).', 'err');
+    }
+  }
+
+  async function connect() {
+    if (device && device.gatt.connected) { device.gatt.disconnect(); return; }
+    try {
+      setState('busy');
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SERVICE] });
+      device.addEventListener('gattserverdisconnected', () => { ch = null; setState('off'); log('Disconnected', 'err'); });
+      const server = await device.gatt.connect();
+      const svc = await server.getPrimaryService(SERVICE);
+      ch = await svc.getCharacteristic(CHAR);
+      try {
+        await ch.startNotifications();
+        ch.addEventListener('characteristicvaluechanged', (e) => onText(new TextDecoder().decode(e.target.value)));
+      } catch (_) { /* some clones don't notify; sending still works */ }
+      setState('on');
+      log('Connected to ' + (device.name || 'module'));
+    } catch (err) {
+      setState('off');
+      if (err && err.name === 'NotFoundError') return; // user closed the picker
+      log('Could not connect: ' + (err && err.message ? err.message : err) +
+          ' — make sure the cat is on and the module light is blinking. Pick a device named like HMSoft, BT05, CC41 or MLT-BT05.', 'err');
+    }
+  }
+
+  function send(cmd) {
+    if (!ch && !writer) { log('Not connected. Tap USB or Bluetooth first.', 'err'); return Promise.resolve(false); }
+    const bytes = new TextEncoder().encode(cmd + '\n');
+    queue = queue.then(async () => {
+      if (writer) { await writer.write(bytes); log('> ' + cmd, 'out'); return true; }
+      for (let i = 0; i < bytes.length; i += 20) {
+        const part = bytes.slice(i, i + 20);
+        if (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) await ch.writeValueWithoutResponse(part);
+        else await ch.writeValue(part);
+      }
+      log('> ' + cmd, 'out');
+      return true;
+    }).catch((err) => { log('Send failed: ' + err.message, 'err'); return false; });
+    return queue;
+  }
+
+  const flash = (el) => { el.classList.add('sent'); setTimeout(() => el.classList.remove('sent'), 250); };
+
+  btn.addEventListener('click', connect);
+  usbBtn.addEventListener('click', usbConnect);
+  document.querySelectorAll('[data-gait]').forEach((b) => b.addEventListener('click', () => {
+    gait = b.dataset.gait;
+    document.querySelectorAll('[data-gait]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  document.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', () => {
+    const m = b.dataset.move;
+    const cmd = 'k' + gait + (gait === 'wk' ? m : (m === 'F' ? '' : m));   // wkF/wkL/wkR, tr/trL/trR, cr/crL/crR
+    send(cmd).then((ok) => ok && flash(b));
+  }));
+  document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => {
+    send(b.dataset.cmd).then((ok) => ok && flash(b));
+  }));
+  $('#cmdForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = $('#cmdInput').value.trim();
+    if (v) send(v).then((ok) => { if (ok) $('#cmdInput').value = ''; });
+  });
+})();
+</script>
+</body>
+</html>
